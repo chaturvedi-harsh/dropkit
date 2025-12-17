@@ -48,7 +48,7 @@ export default async function Dashboard() {
               <h2 className="text-lg font-bold">Droply</h2>
             </div>
             <p className="text-default-500 text-sm">
-              &copy; {new Date().getFullYear()} Droply
+              &copy; {new Date().getFullYear()} Dropkit
             </p>
           </div>
         </div>
