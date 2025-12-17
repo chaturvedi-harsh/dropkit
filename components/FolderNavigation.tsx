@@ -34,7 +34,7 @@ export default function FolderNavigation({
         Home
       </Button>
       {folderPath.map((folder, index) => (
-        <div key={folder.id} className="flex items-center">
+        <div key={`${folder.id}-${index}`} className="flex items-center">
           <span className="mx-1 text-default-400">/</span>
           <Button
             variant="flat"
