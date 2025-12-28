@@ -14,12 +14,17 @@ import { Divider } from "@heroui/divider";
 import { Mail, Lock, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { signInSchema } from "@/schemas/signInSchema";
 
+const verificationCodeSchema = z.object({
+  code: z.string().min(1, { message: "Verification code is required" }),
+});
+
 export default function SignInForm() {
   const router = useRouter();
   const { signIn, isLoaded, setActive } = useSignIn();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [verificationMode, setVerificationMode] = useState(false);
 
   const {
     register,
@@ -30,6 +35,17 @@ export default function SignInForm() {
     defaultValues: {
       identifier: "",
       password: "",
+    },
+  });
+
+  const {
+    register: registerVerification,
+    handleSubmit: handleVerificationSubmit,
+    formState: { errors: verificationErrors },
+  } = useForm<z.infer<typeof verificationCodeSchema>>({
+    resolver: zodResolver(verificationCodeSchema),
+    defaultValues: {
+      code: "",
     },
   });
 
@@ -45,12 +61,25 @@ export default function SignInForm() {
         password: data.password,
       });
 
+      if (!result) {
+        console.error("No result returned from signIn.create()");
+        setAuthError(
+          "Sign-in service error. Please check your credentials and try again."
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
         router.push("/dashboard");
+      } else if (result.status === "needs_second_factor") {
+        // Second factor needed - Clerk has already sent the verification code
+        console.log("Second factor required - verification code sent to email");
+        setVerificationMode(true);
+        setAuthError(null);
       } else {
-        console.error("Sign-in incomplete:", result);
-        setAuthError("Sign-in could not be completed. Please try again.");
+        setAuthError("Invalid credentials. Please try again.");
       }
     } catch (error: any) {
       console.error("Sign-in error:", error);
@@ -62,6 +91,115 @@ export default function SignInForm() {
       setIsSubmitting(false);
     }
   };
+
+  const onVerificationSubmit = async (
+    data: z.infer<typeof verificationCodeSchema>
+  ) => {
+    if (!isLoaded || !signIn) return;
+
+    setIsSubmitting(true);
+    setAuthError(null);
+
+    try {
+      const result = await signIn.attemptSecondFactor({
+        strategy: "email_code",
+        code: data.code,
+      });
+
+      if (result.status === "complete") {
+        await setActive({ session: result.createdSessionId });
+        router.push("/dashboard");
+      } else {
+        setAuthError(
+          "Verification failed. Please check the code and try again."
+        );
+      }
+    } catch (error: any) {
+      console.error("Verification error:", error);
+      setAuthError(
+        error.errors?.[0]?.message ||
+          "An error occurred during verification. Please try again."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!isLoaded) {
+    return (
+      <Card className="w-full max-w-md border border-default-200 bg-default-50 shadow-xl">
+        <CardBody className="py-12 text-center">
+          <p className="text-default-500">Loading...</p>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  if (verificationMode) {
+    return (
+      <Card className="w-full max-w-md border border-default-200 bg-default-50 shadow-xl">
+        <CardHeader className="flex flex-col gap-1 items-center pb-2">
+          <h1 className="text-2xl font-bold text-default-900">
+            Verify Your Identity
+          </h1>
+          <p className="text-default-500 text-center">
+            A verification code has been sent to your email
+          </p>
+        </CardHeader>
+
+        <Divider />
+
+        <CardBody className="py-6">
+          {authError && (
+            <div className="bg-danger-50 text-danger-700 p-4 rounded-lg mb-6 flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+              <p>{authError}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleVerificationSubmit(onVerificationSubmit)} className="space-y-6">
+            <div className="space-y-2">
+              <label
+                htmlFor="code"
+                className="text-sm font-medium text-default-900"
+              >
+                Verification Code
+              </label>
+              <Input
+                id="code"
+                type="text"
+                placeholder="000000"
+                isInvalid={!!verificationErrors.code}
+                errorMessage={verificationErrors.code?.message}
+                {...registerVerification("code")}
+                className="w-full text-center text-2xl tracking-widest"
+              />
+            </div>
+
+            <Button
+              type="submit"
+              color="primary"
+              className="w-full"
+              isLoading={isSubmitting}
+            >
+              {isSubmitting ? "Verifying..." : "Verify"}
+            </Button>
+          </form>
+
+          <Button
+            variant="light"
+            className="w-full mt-4"
+            onPress={() => {
+              setVerificationMode(false);
+              setAuthError(null);
+            }}
+          >
+            Back to Sign In
+          </Button>
+        </CardBody>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full max-w-md border border-default-200 bg-default-50 shadow-xl">
@@ -121,7 +259,7 @@ export default function SignInForm() {
                   isIconOnly
                   variant="light"
                   size="sm"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onPress={() => setShowPassword(!showPassword)}
                   type="button"
                 >
                   {showPassword ? (
